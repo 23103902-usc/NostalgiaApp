@@ -1,5 +1,14 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput } from 'react-native';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  TextInput,
+  Image,
+  FlatList,
+} from 'react-native';
+
 import MapView, { Marker } from 'react-native-maps';
 
 import {
@@ -9,6 +18,8 @@ import {
   renamePlace,
 } from '../src/services/places';
 
+import { pickAndUploadPhoto } from '../src/services/pickAndUploadPhoto';
+
 export default function MapScreen() {
   const mapRef = useRef(null);
 
@@ -16,23 +27,17 @@ export default function MapScreen() {
   const [selectedPlace, setSelectedPlace] = useState(null);
   const [newTitle, setNewTitle] = useState('');
 
-  // 📥 LOAD MARKERS
-  useEffect(() => {
-    loadPlaces();
-  }, []);
-
+  // 📥 LOAD PLACES
   const loadPlaces = async () => {
     const data = await getPlaces();
     setPlaces(data);
   };
 
-  // 📍 SELECT MARKER
-  const onMarkerPress = (place) => {
-    setSelectedPlace(place);
-    setNewTitle(place.title || '');
-  };
+  useEffect(() => {
+    loadPlaces();
+  }, []);
 
-  // ➕ ADD MARKER
+  // 📍 ADD MARKER (CENTER OF MAP)
   const handleAddMarker = async () => {
     if (!mapRef.current) return;
 
@@ -44,6 +49,15 @@ export default function MapScreen() {
     );
 
     loadPlaces();
+  };
+
+  // 🖼 ADD PHOTO (FIXED)
+  const handleAddPhoto = async () => {
+    if (!selectedPlace) return;
+
+    await pickAndUploadPhoto(selectedPlace.id);
+
+    await loadPlaces();
   };
 
   // ✏️ RENAME MARKER
@@ -63,7 +77,14 @@ export default function MapScreen() {
 
     setSelectedPlace(null);
     setNewTitle('');
+
     loadPlaces();
+  };
+
+  // 📌 SELECT MARKER
+  const onMarkerPress = (place) => {
+    setSelectedPlace(place);
+    setNewTitle(place.title || '');
   };
 
   return (
@@ -80,33 +101,53 @@ export default function MapScreen() {
           longitudeDelta: 0.05,
         }}
       >
-        {places.map((place) => (
-          <Marker
-            key={place.id}
-            coordinate={{
-              latitude: place.latitude,
-              longitude: place.longitude,
-            }}
-            onPress={() => onMarkerPress(place)}
-          />
-        ))}
+        {places.map((place) => {
+          const thumbnail = place.photos?.[0]?.url;
+
+          return (
+            <Marker
+              key={place.id}
+              coordinate={{
+                latitude: place.latitude,
+                longitude: place.longitude,
+              }}
+              onPress={() => onMarkerPress(place)}
+            >
+              <View style={styles.markerContainer}>
+
+                {thumbnail && (
+                  <Image
+                    source={{ uri: thumbnail }}
+                    style={styles.markerImage}
+                  />
+                )}
+
+                <View style={styles.pin} />
+              </View>
+            </Marker>
+          );
+        })}
       </MapView>
 
-      {/* ➕ ADD MARKER */}
-      <TouchableOpacity style={styles.addButton} onPress={handleAddMarker}>
+      {/* CROSSHAIR */}
+      <View style={styles.crosshair} />
+
+      {/* ADD BUTTON */}
+      <TouchableOpacity
+        style={styles.addButton}
+        onPress={handleAddMarker}
+      >
         <Text style={styles.addText}>+</Text>
       </TouchableOpacity>
 
-      {/* 📦 PANEL */}
+      {/* BOTTOM PANEL */}
       {selectedPlace && (
         <View style={styles.panel}>
 
-          {/* TITLE */}
           <Text style={styles.title}>
             {selectedPlace.title}
           </Text>
 
-          {/* RENAME INPUT */}
           <TextInput
             placeholder="Rename marker"
             value={newTitle}
@@ -114,13 +155,37 @@ export default function MapScreen() {
             style={styles.input}
           />
 
-          <TouchableOpacity style={styles.btn} onPress={handleRename}>
+          <TouchableOpacity
+            style={styles.btn}
+            onPress={handleRename}
+          >
             <Text style={styles.btnText}>Rename</Text>
           </TouchableOpacity>
 
-          {/* DELETE */}
+          <TouchableOpacity
+            style={styles.photoBtn}
+            onPress={handleAddPhoto}
+          >
+            <Text style={styles.btnText}>Add Photo</Text>
+          </TouchableOpacity>
+
+          <FlatList
+            horizontal
+            data={selectedPlace.photos || []}
+            keyExtractor={(_, i) => i.toString()}
+            renderItem={({ item }) => (
+              <Image
+                source={{ uri: item.url }}
+                style={styles.photo}
+              />
+            )}
+            style={{ marginTop: 10 }}
+          />
+
           <TouchableOpacity onPress={handleDelete}>
-            <Text style={styles.deleteText}>Delete Marker</Text>
+            <Text style={styles.deleteText}>
+              Delete Marker
+            </Text>
           </TouchableOpacity>
 
         </View>
@@ -129,55 +194,101 @@ export default function MapScreen() {
     </View>
   );
 }
+
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  map: { flex: 1 },
+  container: {
+    flex: 1,
+  },
+
+  map: {
+    flex: 1,
+  },
+
+  crosshair: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    width: 20,
+    height: 20,
+    marginLeft: -10,
+    marginTop: -10,
+    borderWidth: 2,
+    borderColor: 'white',
+    borderRadius: 20,
+  },
 
   addButton: {
     position: 'absolute',
     bottom: 30,
     alignSelf: 'center',
-    width: 65,
-    height: 65,
-    borderRadius: 32,
-    backgroundColor: '#000',
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    backgroundColor: 'black',
     justifyContent: 'center',
     alignItems: 'center',
   },
 
   addText: {
     color: 'white',
-    fontSize: 34,
+    fontSize: 32,
     fontWeight: 'bold',
+  },
+
+  markerContainer: {
+    alignItems: 'center',
+  },
+
+  markerImage: {
+    width: 70,
+    height: 50,
+    borderRadius: 10,
+    marginBottom: 5,
+  },
+
+  pin: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: 'red',
+    borderWidth: 2,
+    borderColor: 'white',
   },
 
   panel: {
     position: 'absolute',
     bottom: 110,
-    left: 20,
-    right: 20,
+    left: 15,
+    right: 15,
     backgroundColor: 'white',
-    padding: 12,
-    borderRadius: 10,
+    borderRadius: 20,
+    padding: 14,
   },
 
   title: {
+    fontSize: 18,
     fontWeight: 'bold',
-    fontSize: 16,
   },
 
   input: {
-    backgroundColor: '#eee',
-    padding: 8,
+    backgroundColor: '#f2f2f2',
+    padding: 10,
+    borderRadius: 10,
     marginTop: 10,
-    borderRadius: 6,
   },
 
   btn: {
     backgroundColor: 'black',
-    padding: 8,
-    marginTop: 8,
-    borderRadius: 6,
+    padding: 12,
+    borderRadius: 10,
+    marginTop: 10,
+  },
+
+  photoBtn: {
+    backgroundColor: '#444',
+    padding: 12,
+    borderRadius: 10,
+    marginTop: 10,
   },
 
   btnText: {
@@ -185,8 +296,15 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 
+  photo: {
+    width: 80,
+    height: 80,
+    borderRadius: 10,
+    marginRight: 10,
+  },
+
   deleteText: {
-    marginTop: 10,
+    marginTop: 12,
     color: 'red',
     textAlign: 'center',
     fontWeight: 'bold',
