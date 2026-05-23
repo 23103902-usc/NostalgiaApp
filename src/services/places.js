@@ -29,10 +29,17 @@ export const addPlace = async (
 ) => {
 
   await addDoc(getPlacesCollection(), {
+
     latitude,
     longitude,
+
     title: 'New Place',
+
     photos: [],
+
+    // ✅ TIME CAPSULE YEAR
+    year: new Date().getFullYear(),
+
   });
 
 };

@@ -9,6 +9,8 @@ import {
   FlatList,
   Modal,
   Dimensions,
+  Animated,
+  PanResponder,
 } from 'react-native';
 
 import MapView, { Marker } from 'react-native-maps';
@@ -22,13 +24,20 @@ import {
 
 import { pickAndUploadPhoto } from '../src/services/pickAndUploadPhoto';
 
+const SCREEN_HEIGHT = Dimensions.get('window').height;
 const SCREEN_WIDTH = Dimensions.get('window').width;
+
+/* =========================
+   SNAP POINTS
+========================= */
+const SNAP_TOP = 120;
+const SNAP_MID = SCREEN_HEIGHT * 0.5;
+const SNAP_BOTTOM = SCREEN_HEIGHT - 80;
 
 /* =========================
    MARKER
 ========================= */
-const PlaceMarker = React.memo(({ place, onPress, selectedId }) => {
-  const isSelected = selectedId === place.id;
+const PlaceMarker = React.memo(({ place, onPress }) => {
   const [loaded, setLoaded] = useState(false);
 
   return (
@@ -52,7 +61,8 @@ const PlaceMarker = React.memo(({ place, onPress, selectedId }) => {
           </View>
         )}
 
-        <View style={[styles.pin, isSelected && styles.pinActive]} />
+        <View style={styles.pin} />
+
       </View>
     </Marker>
   );
@@ -68,13 +78,24 @@ export default function MapScreen() {
   const [selectedPlace, setSelectedPlace] = useState(null);
   const [newTitle, setNewTitle] = useState('');
 
-  /* viewer state */
   const [viewerVisible, setViewerVisible] = useState(false);
   const [viewerIndex, setViewerIndex] = useState(0);
 
-  const selectedId = selectedPlace?.id;
+  /* ✅ YEAR FILTER */
+  const [selectedYear, setSelectedYear] = useState(
+    new Date().getFullYear()
+  );
 
-  /* LOAD */
+  const pan = useRef(
+    new Animated.Value(SNAP_BOTTOM)
+  ).current;
+
+  const clamp = (v, min, max) =>
+    Math.min(Math.max(v, min), max);
+
+  /* =========================
+     LOAD DATA
+  ========================= */
   const loadPlaces = async () => {
     const data = await getPlaces();
     setPlaces(data);
@@ -84,10 +105,17 @@ export default function MapScreen() {
     loadPlaces();
   }, []);
 
-  /* OPEN SHEET */
+  /* =========================
+     OPEN SHEET
+  ========================= */
   const openSheet = (place) => {
     setSelectedPlace(place);
     setNewTitle(place.title || '');
+
+    Animated.spring(pan, {
+      toValue: SNAP_MID,
+      useNativeDriver: false,
+    }).start();
 
     mapRef.current?.animateToRegion({
       latitude: place.latitude,
@@ -100,17 +128,57 @@ export default function MapScreen() {
   const closeSheet = () => {
     setSelectedPlace(null);
     setNewTitle('');
+
+    Animated.spring(pan, {
+      toValue: SNAP_BOTTOM,
+      useNativeDriver: false,
+    }).start();
   };
 
-  /* PHOTO VIEWER */
-  const openPhotoViewer = (index) => {
-    setViewerIndex(index);
-    setViewerVisible(true);
-  };
+  /* =========================
+     DRAG SHEET
+  ========================= */
+  const panResponder = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: () => true,
 
-  /* ACTIONS */
+      onPanResponderMove: (_, gesture) => {
+        pan.setValue(
+          clamp(
+            gesture.moveY,
+            SNAP_TOP,
+            SNAP_BOTTOM
+          )
+        );
+      },
+
+      onPanResponderRelease: (_, gesture) => {
+        const y = gesture.moveY;
+
+        let snapTo = SNAP_BOTTOM;
+
+        if (y < SCREEN_HEIGHT * 0.3) {
+          snapTo = SNAP_TOP;
+        } else if (y < SCREEN_HEIGHT * 0.65) {
+          snapTo = SNAP_MID;
+        } else {
+          snapTo = SNAP_BOTTOM;
+        }
+
+        Animated.spring(pan, {
+          toValue: snapTo,
+          useNativeDriver: false,
+        }).start();
+      },
+    })
+  ).current;
+
+  /* =========================
+     ACTIONS
+  ========================= */
   const handleAddMarker = async () => {
-    const camera = await mapRef.current.getCamera();
+    const camera =
+      await mapRef.current.getCamera();
 
     await addPlace(
       camera.center.latitude,
@@ -123,14 +191,21 @@ export default function MapScreen() {
   const handleAddPhoto = async () => {
     if (!selectedPlace) return;
 
-    await pickAndUploadPhoto(selectedPlace.id);
+    await pickAndUploadPhoto(
+      selectedPlace.id
+    );
+
     loadPlaces();
   };
 
   const handleRename = async () => {
     if (!selectedPlace || !newTitle) return;
 
-    await renamePlace(selectedPlace.id, newTitle);
+    await renamePlace(
+      selectedPlace.id,
+      newTitle
+    );
+
     loadPlaces();
   };
 
@@ -138,10 +213,15 @@ export default function MapScreen() {
     if (!selectedPlace) return;
 
     await deletePlace(selectedPlace.id);
+
     closeSheet();
+
     loadPlaces();
   };
 
+  /* =========================
+     UI
+  ========================= */
   return (
     <View style={styles.container}>
 
@@ -155,122 +235,260 @@ export default function MapScreen() {
           latitudeDelta: 0.05,
           longitudeDelta: 0.05,
         }}
-        moveOnMarkerPress={false}
         tracksViewChanges={false}
       >
-        {places.map((place) => (
-          <PlaceMarker
-            key={place.id}
-            place={place}
-            selectedId={selectedId}
-            onPress={openSheet}
-          />
-        ))}
+
+        {/* ✅ FILTER BY YEAR */}
+        {places
+          .filter(
+            (place) =>
+              (place.year || 2026) ===
+              selectedYear
+          )
+          .map((place) => (
+            <PlaceMarker
+              key={place.id}
+              place={place}
+              onPress={openSheet}
+            />
+          ))}
+
       </MapView>
+
+      {/* =========================
+          YEAR FILTER
+      ========================= */}
+      <View style={styles.yearBar}>
+
+        {[2024, 2025, 2026].map(
+          (year) => (
+
+            <TouchableOpacity
+              key={year}
+              onPress={() =>
+                setSelectedYear(year)
+              }
+              style={[
+                styles.yearBtn,
+
+                selectedYear === year &&
+                  styles.yearBtnActive,
+              ]}
+            >
+
+              <Text
+                style={[
+                  styles.yearText,
+
+                  selectedYear ===
+                    year && {
+                    color: '#000',
+                  },
+                ]}
+              >
+                {year}
+              </Text>
+
+            </TouchableOpacity>
+
+          )
+        )}
+
+      </View>
 
       {/* ADD BUTTON */}
       <TouchableOpacity
         style={styles.addButton}
         onPress={handleAddMarker}
       >
-        <Text style={styles.addText}>+</Text>
+        <Text style={styles.addText}>
+          +
+        </Text>
       </TouchableOpacity>
 
       {/* =========================
           BOTTOM SHEET
       ========================= */}
       {selectedPlace && (
-        <View style={styles.sheet}>
+        <Animated.View
+          style={[
+            styles.sheet,
+            {
+              transform: [
+                { translateY: pan },
+              ],
+            },
+          ]}
+        >
 
-          <View style={styles.header}>
-            <Text style={styles.title}>
-              {selectedPlace.title}
-            </Text>
-
-            <TouchableOpacity onPress={closeSheet}>
-              <Text style={styles.close}>✕</Text>
-            </TouchableOpacity>
+          {/* DRAG AREA */}
+          <View
+            {...panResponder.panHandlers}
+            style={styles.dragArea}
+          >
+            <View style={styles.handle} />
           </View>
 
+          {/* HEADER */}
+          <View style={styles.header}>
+
+            <View>
+              <Text style={styles.title}>
+                {selectedPlace.title}
+              </Text>
+
+              {/* ✅ YEAR */}
+              <Text style={styles.yearLabel}>
+                📅{' '}
+                {selectedPlace.year ||
+                  2026}
+              </Text>
+            </View>
+
+            <TouchableOpacity
+              onPress={closeSheet}
+            >
+              <Text style={styles.close}>
+                ✕
+              </Text>
+            </TouchableOpacity>
+
+          </View>
+
+          {/* INPUT */}
           <TextInput
             value={newTitle}
             onChangeText={setNewTitle}
             style={styles.input}
-            placeholder="Rename place"
           />
 
-          <TouchableOpacity style={styles.btn} onPress={handleRename}>
-            <Text style={styles.btnText}>Rename</Text>
+          {/* BUTTONS */}
+          <TouchableOpacity
+            style={styles.btn}
+            onPress={handleRename}
+          >
+            <Text style={styles.btnText}>
+              Rename
+            </Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.btnDark} onPress={handleAddPhoto}>
-            <Text style={styles.btnText}>Add Photo</Text>
+          <TouchableOpacity
+            style={styles.btnDark}
+            onPress={handleAddPhoto}
+          >
+            <Text style={styles.btnText}>
+              Add Photo
+            </Text>
           </TouchableOpacity>
 
-          {/* THUMBNAILS */}
+          {/* PHOTOS */}
           <FlatList
             horizontal
-            data={selectedPlace.photos || []}
-            keyExtractor={(_, i) => i.toString()}
-            showsHorizontalScrollIndicator={false}
-            ItemSeparatorComponent={() => <View style={{ width: 8 }} />}
-            renderItem={({ item, index }) => (
-              <TouchableOpacity onPress={() => openPhotoViewer(index)}>
-                <Image source={{ uri: item.url }} style={styles.photo} />
+            data={
+              selectedPlace.photos || []
+            }
+            keyExtractor={(_, i) =>
+              i.toString()
+            }
+            renderItem={({
+              item,
+              index,
+            }) => (
+              <TouchableOpacity
+                onPress={() => {
+                  setViewerIndex(index);
+                  setViewerVisible(true);
+                }}
+              >
+                <Image
+                  source={{
+                    uri: item.url,
+                  }}
+                  style={styles.photo}
+                />
               </TouchableOpacity>
             )}
           />
 
-          <TouchableOpacity onPress={handleDelete}>
-            <Text style={styles.delete}>Delete Marker</Text>
+          {/* DELETE */}
+          <TouchableOpacity
+            onPress={handleDelete}
+          >
+            <Text style={styles.delete}>
+              Delete Marker
+            </Text>
           </TouchableOpacity>
 
-        </View>
+        </Animated.View>
       )}
 
       {/* =========================
-          FULLSCREEN SWIPE VIEWER
+          FULLSCREEN VIEWER
       ========================= */}
-      <Modal visible={viewerVisible} transparent={false}>
+      <Modal
+        visible={viewerVisible}
+        transparent={false}
+      >
+
         <View style={styles.viewerContainer}>
 
-          {/* CLOSE */}
           <TouchableOpacity
             style={styles.closeViewer}
-            onPress={() => setViewerVisible(false)}
+            onPress={() =>
+              setViewerVisible(false)
+            }
           >
-            <Text style={{ color: '#fff', fontSize: 18 }}>✕</Text>
+            <Text
+              style={{
+                color: '#fff',
+                fontSize: 22,
+              }}
+            >
+              ✕
+            </Text>
           </TouchableOpacity>
 
-          {/* SWIPE */}
           <FlatList
-            data={selectedPlace?.photos || []}
+            data={
+              selectedPlace?.photos || []
+            }
             horizontal
             pagingEnabled
-            showsHorizontalScrollIndicator={false}
-            initialScrollIndex={viewerIndex}
-            getItemLayout={(_, index) => ({
+            showsHorizontalScrollIndicator={
+              false
+            }
+            initialScrollIndex={
+              viewerIndex
+            }
+            getItemLayout={(_, i) => ({
               length: SCREEN_WIDTH,
-              offset: SCREEN_WIDTH * index,
-              index,
+              offset:
+                SCREEN_WIDTH * i,
+              index: i,
             })}
-            onMomentumScrollEnd={(e) => {
-              const index = Math.round(
-                e.nativeEvent.contentOffset.x / SCREEN_WIDTH
-              );
-              setViewerIndex(index);
-            }}
+            keyExtractor={(_, i) =>
+              i.toString()
+            }
             renderItem={({ item }) => (
-              <View style={styles.fullImageContainer}>
+              <View
+                style={
+                  styles.fullscreenSlide
+                }
+              >
                 <Image
-                  source={{ uri: item.url }}
-                  style={styles.fullImage}
+                  source={{
+                    uri: item.url,
+                  }}
+                  style={
+                    styles.fullscreenImage
+                  }
                 />
               </View>
             )}
           />
 
         </View>
+
       </Modal>
 
     </View>
@@ -281,16 +499,58 @@ export default function MapScreen() {
    STYLES
 ========================= */
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  map: { flex: 1 },
+  container: {
+    flex: 1,
+  },
 
+  map: {
+    flex: 1,
+  },
+
+  /* YEAR BAR */
+  yearBar: {
+    position: 'absolute',
+    top: 55,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    backgroundColor:
+      'rgba(0,0,0,0.7)',
+    borderRadius: 20,
+    padding: 6,
+    zIndex: 10,
+  },
+
+  yearBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 14,
+    marginHorizontal: 3,
+  },
+
+  yearBtnActive: {
+    backgroundColor: '#fff',
+  },
+
+  yearText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+
+  yearLabel: {
+    fontSize: 12,
+    color: '#777',
+    marginTop: 2,
+  },
+
+  /* ADD BUTTON */
   addButton: {
     position: 'absolute',
     bottom: 28,
     alignSelf: 'center',
-    width: 62,
-    height: 62,
-    borderRadius: 31,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     backgroundColor: '#000',
     justifyContent: 'center',
     alignItems: 'center',
@@ -298,109 +558,119 @@ const styles = StyleSheet.create({
 
   addText: {
     color: '#fff',
-    fontSize: 28,
+    fontSize: 26,
   },
 
   /* MARKER */
   markerContainer: {
-    width: 48,
-    height: 56,
+    width: 38,
+    height: 48,
     alignItems: 'center',
-    justifyContent: 'center',
   },
 
   thumbWrapper: {
-    width: 38,
-    height: 24,
-    borderRadius: 6,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     overflow: 'hidden',
-    marginBottom: 2,
+    marginBottom: 3,
   },
 
   thumb: {
     width: '100%',
     height: '100%',
-    resizeMode: 'cover',
   },
 
   pin: {
-    width: 9,
-    height: 9,
-    borderRadius: 5,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
     backgroundColor: '#fff',
     borderWidth: 2,
     borderColor: '#999',
   },
 
-  pinActive: {
-    borderColor: '#000',
-    transform: [{ scale: 1.15 }],
-  },
-
   /* SHEET */
   sheet: {
     position: 'absolute',
-    bottom: 0,
     left: 0,
     right: 0,
-    height: 300,
+    height: SCREEN_HEIGHT,
     backgroundColor: '#fff',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 14,
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    padding: 12,
+  },
+
+  dragArea: {
+    paddingVertical: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
+  handle: {
+    width: 44,
+    height: 4,
+    backgroundColor: '#ccc',
+    borderRadius: 2,
   },
 
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent:
+      'space-between',
   },
 
   title: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: 'bold',
   },
 
   close: {
-    fontSize: 20,
+    fontSize: 18,
   },
 
   input: {
     backgroundColor: '#f2f2f2',
-    padding: 8,
-    borderRadius: 10,
+    padding: 7,
+    borderRadius: 8,
     marginTop: 6,
   },
 
   btn: {
     backgroundColor: '#000',
-    padding: 9,
-    borderRadius: 10,
-    marginTop: 8,
+    paddingVertical: 6,
+    borderRadius: 8,
+    marginTop: 6,
   },
 
   btnDark: {
     backgroundColor: '#444',
-    padding: 9,
-    borderRadius: 10,
-    marginTop: 6,
+    paddingVertical: 6,
+    borderRadius: 8,
+    marginTop: 5,
   },
 
   btnText: {
     color: '#fff',
     textAlign: 'center',
-    fontSize: 13,
+    fontSize: 12,
   },
 
   photo: {
-    width: 70,
-    height: 70,
-    borderRadius: 10,
+    width: 60,
+    height: 60,
+    borderRadius: 8,
+    marginRight: 6,
+    marginTop: 10,
+    marginBottom: 10,
   },
 
   delete: {
-    marginTop: 8,
+    marginTop: 6,
     textAlign: 'center',
     color: 'red',
+    fontSize: 12,
   },
 
   /* VIEWER */
@@ -409,16 +679,17 @@ const styles = StyleSheet.create({
     backgroundColor: '#000',
   },
 
-  fullImageContainer: {
+  fullscreenSlide: {
     width: SCREEN_WIDTH,
-    flex: 1,
+    height: SCREEN_HEIGHT,
     justifyContent: 'center',
     alignItems: 'center',
+    backgroundColor: '#000',
   },
 
-  fullImage: {
+  fullscreenImage: {
     width: SCREEN_WIDTH,
-    height: '80%',
+    height: SCREEN_HEIGHT,
     resizeMode: 'contain',
   },
 
