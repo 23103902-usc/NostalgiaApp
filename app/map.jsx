@@ -20,6 +20,44 @@ import {
 
 import { pickAndUploadPhoto } from '../src/services/pickAndUploadPhoto';
 
+/* =========================
+   MARKER COMPONENT
+========================= */
+const PlaceMarker = React.memo(({ place, onPress, selectedId }) => {
+  const isSelected = selectedId === place.id;
+  const [loaded, setLoaded] = useState(false);
+
+  return (
+    <Marker
+      coordinate={{
+        latitude: place.latitude,
+        longitude: place.longitude,
+      }}
+      onPress={() => onPress(place)}
+      tracksViewChanges={!loaded}
+    >
+      <View style={styles.markerContainer} pointerEvents="none">
+
+        {!!place.photos?.[0]?.url && (
+          <View style={styles.thumbWrapper}>
+            <Image
+              source={{ uri: place.photos[0].url }}
+              style={styles.thumb}
+              onLoadEnd={() => setLoaded(true)}
+            />
+          </View>
+        )}
+
+        <View style={[styles.pin, isSelected && styles.pinActive]} />
+
+      </View>
+    </Marker>
+  );
+});
+
+/* =========================
+   MAIN SCREEN
+========================= */
 export default function MapScreen() {
   const mapRef = useRef(null);
 
@@ -27,7 +65,9 @@ export default function MapScreen() {
   const [selectedPlace, setSelectedPlace] = useState(null);
   const [newTitle, setNewTitle] = useState('');
 
-  // 📥 LOAD PLACES
+  const selectedId = selectedPlace?.id;
+
+  /* LOAD PLACES */
   const loadPlaces = async () => {
     const data = await getPlaces();
     setPlaces(data);
@@ -37,10 +77,29 @@ export default function MapScreen() {
     loadPlaces();
   }, []);
 
-  // 📍 ADD MARKER (CENTER OF MAP)
-  const handleAddMarker = async () => {
-    if (!mapRef.current) return;
+  /* OPEN SHEET */
+  const openSheet = (place) => {
+    setSelectedPlace(place);
+    setNewTitle(place.title || '');
 
+    mapRef.current?.animateToRegion(
+      {
+        latitude: place.latitude,
+        longitude: place.longitude,
+        latitudeDelta: 0.01,
+        longitudeDelta: 0.01,
+      },
+      300
+    );
+  };
+
+  const closeSheet = () => {
+    setSelectedPlace(null);
+    setNewTitle('');
+  };
+
+  /* ADD MARKER */
+  const handleAddMarker = async () => {
     const camera = await mapRef.current.getCamera();
 
     await addPlace(
@@ -51,40 +110,29 @@ export default function MapScreen() {
     loadPlaces();
   };
 
-  // 🖼 ADD PHOTO (FIXED)
+  /* ADD PHOTO */
   const handleAddPhoto = async () => {
     if (!selectedPlace) return;
 
     await pickAndUploadPhoto(selectedPlace.id);
-
-    await loadPlaces();
+    loadPlaces();
   };
 
-  // ✏️ RENAME MARKER
+  /* RENAME */
   const handleRename = async () => {
     if (!selectedPlace || !newTitle) return;
 
     await renamePlace(selectedPlace.id, newTitle);
-
     loadPlaces();
   };
 
-  // 🗑 DELETE MARKER
+  /* DELETE */
   const handleDelete = async () => {
     if (!selectedPlace) return;
 
     await deletePlace(selectedPlace.id);
-
-    setSelectedPlace(null);
-    setNewTitle('');
-
+    closeSheet();
     loadPlaces();
-  };
-
-  // 📌 SELECT MARKER
-  const onMarkerPress = (place) => {
-    setSelectedPlace(place);
-    setNewTitle(place.title || '');
   };
 
   return (
@@ -100,37 +148,18 @@ export default function MapScreen() {
           latitudeDelta: 0.05,
           longitudeDelta: 0.05,
         }}
+        moveOnMarkerPress={false}
+        tracksViewChanges={false}
       >
-        {places.map((place) => {
-          const thumbnail = place.photos?.[0]?.url;
-
-          return (
-            <Marker
-              key={place.id}
-              coordinate={{
-                latitude: place.latitude,
-                longitude: place.longitude,
-              }}
-              onPress={() => onMarkerPress(place)}
-            >
-              <View style={styles.markerContainer}>
-
-                {thumbnail && (
-                  <Image
-                    source={{ uri: thumbnail }}
-                    style={styles.markerImage}
-                  />
-                )}
-
-                <View style={styles.pin} />
-              </View>
-            </Marker>
-          );
-        })}
+        {places.map((place) => (
+          <PlaceMarker
+            key={place.id}
+            place={place}
+            selectedId={selectedId}
+            onPress={openSheet}
+          />
+        ))}
       </MapView>
-
-      {/* CROSSHAIR */}
-      <View style={styles.crosshair} />
 
       {/* ADD BUTTON */}
       <TouchableOpacity
@@ -140,52 +169,58 @@ export default function MapScreen() {
         <Text style={styles.addText}>+</Text>
       </TouchableOpacity>
 
-      {/* BOTTOM PANEL */}
+      {/* BOTTOM SHEET */}
       {selectedPlace && (
-        <View style={styles.panel}>
+        <View style={styles.sheet}>
 
-          <Text style={styles.title}>
-            {selectedPlace.title}
-          </Text>
+          {/* HEADER */}
+          <View style={styles.header}>
+            <Text style={styles.title}>
+              {selectedPlace.title}
+            </Text>
 
+            <TouchableOpacity onPress={closeSheet}>
+              <Text style={styles.close}>✕</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* INPUT */}
           <TextInput
-            placeholder="Rename marker"
             value={newTitle}
             onChangeText={setNewTitle}
             style={styles.input}
+            placeholder="Rename place"
           />
 
-          <TouchableOpacity
-            style={styles.btn}
-            onPress={handleRename}
-          >
+          {/* BUTTONS */}
+          <TouchableOpacity style={styles.btn} onPress={handleRename}>
             <Text style={styles.btnText}>Rename</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.photoBtn}
-            onPress={handleAddPhoto}
-          >
+          <TouchableOpacity style={styles.btnDark} onPress={handleAddPhoto}>
             <Text style={styles.btnText}>Add Photo</Text>
           </TouchableOpacity>
 
-          <FlatList
-            horizontal
-            data={selectedPlace.photos || []}
-            keyExtractor={(_, i) => i.toString()}
-            renderItem={({ item }) => (
-              <Image
-                source={{ uri: item.url }}
-                style={styles.photo}
-              />
-            )}
-            style={{ marginTop: 10 }}
-          />
+          {/* PHOTOS */}
+          <View style={styles.photoContainer}>
+            <FlatList
+              horizontal
+              data={selectedPlace.photos || []}
+              keyExtractor={(_, i) => i.toString()}
+              showsHorizontalScrollIndicator={false}
+              ItemSeparatorComponent={() => <View style={{ width: 8 }} />}
+              renderItem={({ item }) => (
+                <Image
+                  source={{ uri: item.url }}
+                  style={styles.photo}
+                />
+              )}
+            />
+          </View>
 
+          {/* DELETE */}
           <TouchableOpacity onPress={handleDelete}>
-            <Text style={styles.deleteText}>
-              Delete Marker
-            </Text>
+            <Text style={styles.delete}>Delete Marker</Text>
           </TouchableOpacity>
 
         </View>
@@ -195,118 +230,147 @@ export default function MapScreen() {
   );
 }
 
+/* =========================
+   STYLES
+========================= */
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-
-  map: {
-    flex: 1,
-  },
-
-  crosshair: {
-    position: 'absolute',
-    top: '50%',
-    left: '50%',
-    width: 20,
-    height: 20,
-    marginLeft: -10,
-    marginTop: -10,
-    borderWidth: 2,
-    borderColor: 'white',
-    borderRadius: 20,
-  },
+  container: { flex: 1 },
+  map: { flex: 1 },
 
   addButton: {
     position: 'absolute',
-    bottom: 30,
+    bottom: 28,
     alignSelf: 'center',
-    width: 70,
-    height: 70,
-    borderRadius: 35,
-    backgroundColor: 'black',
+    width: 62,
+    height: 62,
+    borderRadius: 31,
+    backgroundColor: '#000',
     justifyContent: 'center',
     alignItems: 'center',
   },
 
   addText: {
-    color: 'white',
-    fontSize: 32,
-    fontWeight: 'bold',
+    color: '#fff',
+    fontSize: 28,
   },
 
+  /* MARKER */
   markerContainer: {
+    width: 48,
+    height: 56,
     alignItems: 'center',
+    justifyContent: 'center',
   },
 
-  markerImage: {
-    width: 70,
-    height: 50,
-    borderRadius: 10,
-    marginBottom: 5,
+  thumbWrapper: {
+    width: 38,
+    height: 24,
+    borderRadius: 6,
+    overflow: 'hidden',
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.9)',
+    marginBottom: 2,
+    elevation: 2,
+  },
+
+  thumb: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
   },
 
   pin: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: 'red',
+    width: 9,
+    height: 9,
+    borderRadius: 5,
+    backgroundColor: '#fff',
     borderWidth: 2,
-    borderColor: 'white',
+    borderColor: '#999',
   },
 
-  panel: {
+  pinActive: {
+    borderColor: '#000',
+    transform: [{ scale: 1.15 }],
+  },
+
+  /* SHEET */
+  sheet: {
     position: 'absolute',
-    bottom: 110,
-    left: 15,
-    right: 15,
-    backgroundColor: 'white',
-    borderRadius: 20,
-    padding: 14,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 300,
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingHorizontal: 14,
+    paddingTop: 10,
+    paddingBottom: 10,
+  },
+
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
   },
 
   title: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: 'bold',
+  },
+
+  close: {
+    fontSize: 20,
   },
 
   input: {
     backgroundColor: '#f2f2f2',
-    padding: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
     borderRadius: 10,
-    marginTop: 10,
+    fontSize: 13,
+    marginTop: 6,
   },
 
   btn: {
-    backgroundColor: 'black',
-    padding: 12,
+    backgroundColor: '#000',
+    paddingVertical: 9,
     borderRadius: 10,
-    marginTop: 10,
+    marginTop: 8,
   },
 
-  photoBtn: {
+  btnDark: {
     backgroundColor: '#444',
-    padding: 12,
+    paddingVertical: 9,
     borderRadius: 10,
-    marginTop: 10,
+    marginTop: 6,
   },
 
   btnText: {
-    color: 'white',
+    color: '#fff',
     textAlign: 'center',
+    fontSize: 13,
+    fontWeight: '500',
+  },
+
+  photoContainer: {
+    marginTop: 12,
+    marginBottom: 10,
   },
 
   photo: {
-    width: 80,
-    height: 80,
+    width: 70,
+    height: 70,
     borderRadius: 10,
-    marginRight: 10,
+    backgroundColor: '#eee',
   },
 
-  deleteText: {
-    marginTop: 12,
-    color: 'red',
+  delete: {
+    marginTop: 8,
     textAlign: 'center',
-    fontWeight: 'bold',
+    color: 'red',
+    fontSize: 13,
   },
 });

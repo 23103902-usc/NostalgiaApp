@@ -1,4 +1,4 @@
-import { db } from '../config/firebase';
+import { auth, db } from '../config/firebase';
 
 import {
   collection,
@@ -10,41 +10,109 @@ import {
   arrayUnion,
 } from 'firebase/firestore';
 
-const PLACES = 'places';
+const getPlacesCollection = () => {
 
-export const addPlace = async (latitude, longitude) => {
-  await addDoc(collection(db, PLACES), {
+  const uid = auth.currentUser?.uid;
+
+  return collection(
+    db,
+    'users',
+    uid,
+    'places'
+  );
+};
+
+// ADD PLACE
+export const addPlace = async (
+  latitude,
+  longitude
+) => {
+
+  await addDoc(getPlacesCollection(), {
     latitude,
     longitude,
     title: 'New Place',
     photos: [],
   });
+
 };
 
+// GET PLACES
 export const getPlaces = async () => {
-  const snap = await getDocs(collection(db, PLACES));
+
+  const snap = await getDocs(
+    getPlacesCollection()
+  );
 
   return snap.docs.map((d) => ({
     id: d.id,
     ...d.data(),
   }));
+
 };
 
+// DELETE PLACE
 export const deletePlace = async (id) => {
-  await deleteDoc(doc(db, PLACES, id));
+
+  const uid = auth.currentUser.uid;
+
+  await deleteDoc(
+    doc(
+      db,
+      'users',
+      uid,
+      'places',
+      id
+    )
+  );
+
 };
 
-export const renamePlace = async (id, newTitle) => {
-  await updateDoc(doc(db, PLACES, id), {
-    title: newTitle,
-  });
+// RENAME PLACE
+export const renamePlace = async (
+  id,
+  newTitle
+) => {
+
+  const uid = auth.currentUser.uid;
+
+  await updateDoc(
+    doc(
+      db,
+      'users',
+      uid,
+      'places',
+      id
+    ),
+    {
+      title: newTitle,
+    }
+  );
+
 };
 
-export const addPhotoToPlace = async (placeId, photoUrl) => {
-  await updateDoc(doc(db, PLACES, placeId), {
-    photos: arrayUnion({
-      url: photoUrl,
-      createdAt: new Date(),
-    }),
-  });
+// ADD PHOTO
+export const addPhotoToPlace = async (
+  placeId,
+  photoUrl
+) => {
+
+  const uid = auth.currentUser.uid;
+
+  await updateDoc(
+    doc(
+      db,
+      'users',
+      uid,
+      'places',
+      placeId
+    ),
+    {
+      photos: arrayUnion({
+        url: photoUrl,
+        createdAt: new Date().toISOString(),
+      }),
+    }
+  );
+
 };
