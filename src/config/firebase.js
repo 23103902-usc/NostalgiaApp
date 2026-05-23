@@ -1,6 +1,13 @@
-import { initializeApp } from 'firebase/app';
+import { initializeApp, getApps, getApp } from 'firebase/app';
+
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+import {
+  initializeAuth,
+  getReactNativePersistence,
+} from 'firebase/auth';
+
 import { getFirestore } from 'firebase/firestore';
-import { getAuth, signInAnonymously } from 'firebase/auth';
 
 const firebaseConfig = {
   apiKey: "AIzaSyA1Yyz9WbBxwhJOwpXswPMDHe_YXMUp81Y",
@@ -11,16 +18,17 @@ const firebaseConfig = {
   appId: "1:734162053091:web:9d1fa1614195e7bf21e2d6"
 };
 
-const app = initializeApp(firebaseConfig);
+// prevent duplicate Firebase app
+const app =
+  getApps().length > 0
+    ? getApp()
+    : initializeApp(firebaseConfig);
+
+// persistent auth
+export const auth = initializeAuth(app, {
+  persistence: getReactNativePersistence(
+    AsyncStorage
+  ),
+});
 
 export const db = getFirestore(app);
-export const auth = getAuth(app);
-
-export const initAuth = async () => {
-  try {
-    await signInAnonymously(auth);
-    console.log('Firebase auth success');
-  } catch (e) {
-    console.log('Auth error:', e);
-  }
-};
