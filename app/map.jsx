@@ -7,6 +7,8 @@ import {
   TextInput,
   Image,
   FlatList,
+  Modal,
+  Dimensions,
 } from 'react-native';
 
 import MapView, { Marker } from 'react-native-maps';
@@ -20,8 +22,10 @@ import {
 
 import { pickAndUploadPhoto } from '../src/services/pickAndUploadPhoto';
 
+const SCREEN_WIDTH = Dimensions.get('window').width;
+
 /* =========================
-   MARKER COMPONENT
+   MARKER
 ========================= */
 const PlaceMarker = React.memo(({ place, onPress, selectedId }) => {
   const isSelected = selectedId === place.id;
@@ -49,7 +53,6 @@ const PlaceMarker = React.memo(({ place, onPress, selectedId }) => {
         )}
 
         <View style={[styles.pin, isSelected && styles.pinActive]} />
-
       </View>
     </Marker>
   );
@@ -65,9 +68,13 @@ export default function MapScreen() {
   const [selectedPlace, setSelectedPlace] = useState(null);
   const [newTitle, setNewTitle] = useState('');
 
+  /* viewer state */
+  const [viewerVisible, setViewerVisible] = useState(false);
+  const [viewerIndex, setViewerIndex] = useState(0);
+
   const selectedId = selectedPlace?.id;
 
-  /* LOAD PLACES */
+  /* LOAD */
   const loadPlaces = async () => {
     const data = await getPlaces();
     setPlaces(data);
@@ -82,15 +89,12 @@ export default function MapScreen() {
     setSelectedPlace(place);
     setNewTitle(place.title || '');
 
-    mapRef.current?.animateToRegion(
-      {
-        latitude: place.latitude,
-        longitude: place.longitude,
-        latitudeDelta: 0.01,
-        longitudeDelta: 0.01,
-      },
-      300
-    );
+    mapRef.current?.animateToRegion({
+      latitude: place.latitude,
+      longitude: place.longitude,
+      latitudeDelta: 0.01,
+      longitudeDelta: 0.01,
+    });
   };
 
   const closeSheet = () => {
@@ -98,7 +102,13 @@ export default function MapScreen() {
     setNewTitle('');
   };
 
-  /* ADD MARKER */
+  /* PHOTO VIEWER */
+  const openPhotoViewer = (index) => {
+    setViewerIndex(index);
+    setViewerVisible(true);
+  };
+
+  /* ACTIONS */
   const handleAddMarker = async () => {
     const camera = await mapRef.current.getCamera();
 
@@ -110,7 +120,6 @@ export default function MapScreen() {
     loadPlaces();
   };
 
-  /* ADD PHOTO */
   const handleAddPhoto = async () => {
     if (!selectedPlace) return;
 
@@ -118,7 +127,6 @@ export default function MapScreen() {
     loadPlaces();
   };
 
-  /* RENAME */
   const handleRename = async () => {
     if (!selectedPlace || !newTitle) return;
 
@@ -126,7 +134,6 @@ export default function MapScreen() {
     loadPlaces();
   };
 
-  /* DELETE */
   const handleDelete = async () => {
     if (!selectedPlace) return;
 
@@ -169,11 +176,12 @@ export default function MapScreen() {
         <Text style={styles.addText}>+</Text>
       </TouchableOpacity>
 
-      {/* BOTTOM SHEET */}
+      {/* =========================
+          BOTTOM SHEET
+      ========================= */}
       {selectedPlace && (
         <View style={styles.sheet}>
 
-          {/* HEADER */}
           <View style={styles.header}>
             <Text style={styles.title}>
               {selectedPlace.title}
@@ -184,7 +192,6 @@ export default function MapScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* INPUT */}
           <TextInput
             value={newTitle}
             onChangeText={setNewTitle}
@@ -192,7 +199,6 @@ export default function MapScreen() {
             placeholder="Rename place"
           />
 
-          {/* BUTTONS */}
           <TouchableOpacity style={styles.btn} onPress={handleRename}>
             <Text style={styles.btnText}>Rename</Text>
           </TouchableOpacity>
@@ -201,30 +207,71 @@ export default function MapScreen() {
             <Text style={styles.btnText}>Add Photo</Text>
           </TouchableOpacity>
 
-          {/* PHOTOS */}
-          <View style={styles.photoContainer}>
-            <FlatList
-              horizontal
-              data={selectedPlace.photos || []}
-              keyExtractor={(_, i) => i.toString()}
-              showsHorizontalScrollIndicator={false}
-              ItemSeparatorComponent={() => <View style={{ width: 8 }} />}
-              renderItem={({ item }) => (
-                <Image
-                  source={{ uri: item.url }}
-                  style={styles.photo}
-                />
-              )}
-            />
-          </View>
+          {/* THUMBNAILS */}
+          <FlatList
+            horizontal
+            data={selectedPlace.photos || []}
+            keyExtractor={(_, i) => i.toString()}
+            showsHorizontalScrollIndicator={false}
+            ItemSeparatorComponent={() => <View style={{ width: 8 }} />}
+            renderItem={({ item, index }) => (
+              <TouchableOpacity onPress={() => openPhotoViewer(index)}>
+                <Image source={{ uri: item.url }} style={styles.photo} />
+              </TouchableOpacity>
+            )}
+          />
 
-          {/* DELETE */}
           <TouchableOpacity onPress={handleDelete}>
             <Text style={styles.delete}>Delete Marker</Text>
           </TouchableOpacity>
 
         </View>
       )}
+
+      {/* =========================
+          FULLSCREEN SWIPE VIEWER
+      ========================= */}
+      <Modal visible={viewerVisible} transparent={false}>
+        <View style={styles.viewerContainer}>
+
+          {/* CLOSE */}
+          <TouchableOpacity
+            style={styles.closeViewer}
+            onPress={() => setViewerVisible(false)}
+          >
+            <Text style={{ color: '#fff', fontSize: 18 }}>✕</Text>
+          </TouchableOpacity>
+
+          {/* SWIPE */}
+          <FlatList
+            data={selectedPlace?.photos || []}
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            initialScrollIndex={viewerIndex}
+            getItemLayout={(_, index) => ({
+              length: SCREEN_WIDTH,
+              offset: SCREEN_WIDTH * index,
+              index,
+            })}
+            onMomentumScrollEnd={(e) => {
+              const index = Math.round(
+                e.nativeEvent.contentOffset.x / SCREEN_WIDTH
+              );
+              setViewerIndex(index);
+            }}
+            renderItem={({ item }) => (
+              <View style={styles.fullImageContainer}>
+                <Image
+                  source={{ uri: item.url }}
+                  style={styles.fullImage}
+                />
+              </View>
+            )}
+          />
+
+        </View>
+      </Modal>
 
     </View>
   );
@@ -267,11 +314,7 @@ const styles = StyleSheet.create({
     height: 24,
     borderRadius: 6,
     overflow: 'hidden',
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.9)',
     marginBottom: 2,
-    elevation: 2,
   },
 
   thumb: {
@@ -304,16 +347,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-    paddingHorizontal: 14,
-    paddingTop: 10,
-    paddingBottom: 10,
+    padding: 14,
   },
 
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 6,
   },
 
   title: {
@@ -327,23 +366,21 @@ const styles = StyleSheet.create({
 
   input: {
     backgroundColor: '#f2f2f2',
-    paddingVertical: 8,
-    paddingHorizontal: 10,
+    padding: 8,
     borderRadius: 10,
-    fontSize: 13,
     marginTop: 6,
   },
 
   btn: {
     backgroundColor: '#000',
-    paddingVertical: 9,
+    padding: 9,
     borderRadius: 10,
     marginTop: 8,
   },
 
   btnDark: {
     backgroundColor: '#444',
-    paddingVertical: 9,
+    padding: 9,
     borderRadius: 10,
     marginTop: 6,
   },
@@ -352,25 +389,43 @@ const styles = StyleSheet.create({
     color: '#fff',
     textAlign: 'center',
     fontSize: 13,
-    fontWeight: '500',
-  },
-
-  photoContainer: {
-    marginTop: 12,
-    marginBottom: 10,
   },
 
   photo: {
     width: 70,
     height: 70,
     borderRadius: 10,
-    backgroundColor: '#eee',
   },
 
   delete: {
     marginTop: 8,
     textAlign: 'center',
     color: 'red',
-    fontSize: 13,
+  },
+
+  /* VIEWER */
+  viewerContainer: {
+    flex: 1,
+    backgroundColor: '#000',
+  },
+
+  fullImageContainer: {
+    width: SCREEN_WIDTH,
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
+  fullImage: {
+    width: SCREEN_WIDTH,
+    height: '80%',
+    resizeMode: 'contain',
+  },
+
+  closeViewer: {
+    position: 'absolute',
+    top: 50,
+    right: 20,
+    zIndex: 10,
   },
 });
