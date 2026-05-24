@@ -1,11 +1,11 @@
-import { initializeApp, getApps, getApp } from 'firebase/app';
-
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { initializeApp } from 'firebase/app';
 
 import {
   initializeAuth,
   getReactNativePersistence,
 } from 'firebase/auth';
+
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { getFirestore } from 'firebase/firestore';
 
@@ -18,17 +18,12 @@ const firebaseConfig = {
   appId: "1:734162053091:web:9d1fa1614195e7bf21e2d6"
 };
 
-// prevent duplicate Firebase app
-const app =
-  getApps().length > 0
-    ? getApp()
-    : initializeApp(firebaseConfig);
 
-// persistent auth
+const app = initializeApp(firebaseConfig);
+
+/* ✅ FIXED AUTH */
 export const auth = initializeAuth(app, {
-  persistence: getReactNativePersistence(
-    AsyncStorage
-  ),
+  persistence: getReactNativePersistence(AsyncStorage),
 });
 
 export const db = getFirestore(app);
