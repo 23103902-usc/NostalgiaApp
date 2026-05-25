@@ -100,12 +100,17 @@ export default function MapScreen() {
     }
   }, [viewerVisible]);
 
+  const formatDate = (dateString) => {
+    if (!dateString) return 'Unknown';
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', { 
+      year: 'numeric', 
+      month: 'short', 
+      day: 'numeric' 
+    });
+  };
+
   const openSheet = async (place) => {
-    console.log('=== OPEN SHEET DEBUG ===');
-    console.log('Place ownerId:', place.ownerId);
-    console.log('Current user UID:', auth.currentUser?.uid);
-    console.log('Is owner?', place.ownerId === auth.currentUser?.uid);
-    
     setSelectedPlace(place);
     setEditTitleValue(place.title || '');
     await loadFriendsList();
@@ -163,6 +168,11 @@ export default function MapScreen() {
   };
 
   const handleDeleteMarker = async () => {
+    if (!isOwner) {
+      Alert.alert('Cannot Delete', 'Only the marker owner can delete this memory.');
+      return;
+    }
+    
     Alert.alert('Delete Marker', `Delete "${selectedPlace?.title}"?`, [
       { text: 'Cancel', style: 'cancel' },
       {
@@ -183,29 +193,17 @@ export default function MapScreen() {
   };
 
   const handleAddFriendToMarker = async (friendId, friendEmail, friendName) => {
-    if (!selectedPlace) {
-      Alert.alert('Error', 'No marker selected');
-      return;
-    }
+    if (!selectedPlace) return;
     
-    // Ensure we have a valid name
     const validName = friendName && friendName !== 'undefined' 
       ? friendName 
       : (friendEmail ? friendEmail.split('@')[0] : 'Friend');
-    
-    console.log('=== ADD FRIEND DEBUG ===');
-    console.log('placeId:', selectedPlace.id);
-    console.log('friendId:', friendId);
-    console.log('friendEmail:', friendEmail);
-    console.log('friendName:', validName);
-    console.log('ownerId:', selectedPlace.ownerId);
     
     try {
       await addFriendToMarker(selectedPlace.id, friendId, friendEmail, validName);
       Alert.alert('Success', `${validName} can now see and add to this memory`);
       await loadFriendsList();
     } catch (error) {
-      console.error('Add friend error:', error);
       Alert.alert('Error', error.message || 'Failed to add friend');
     }
   };
@@ -213,8 +211,10 @@ export default function MapScreen() {
   const handleDeletePhoto = async (photo) => {
     const currentUser = auth.currentUser;
     
-    if (photo.uploadedBy !== currentUser?.uid) {
-      Alert.alert('Cannot Delete', 'Only the person who uploaded this can delete it.');
+    // Owner can delete ANY photo in their marker
+    // Friends can only delete their OWN photos
+    if (!isOwner && photo.uploadedBy !== currentUser?.uid) {
+      Alert.alert('Cannot Delete', 'Only the marker owner or the person who uploaded this can delete it.');
       return;
     }
     
@@ -262,16 +262,18 @@ export default function MapScreen() {
         ))}
       </MapView>
 
+      {/* TIME CAPSULE */}
       <View style={styles.timeCapsule}>
-        <TouchableOpacity onPress={() => setSelectedYear(Math.max(minYear, selectedYear - 1))}>
+        <TouchableOpacity style={styles.yearDown} onPress={() => setSelectedYear(Math.max(minYear, selectedYear - 1))}>
           <Text style={styles.arrow}>◀</Text>
         </TouchableOpacity>
         <Text style={styles.year}>{selectedYear}</Text>
-        <TouchableOpacity onPress={() => setSelectedYear(Math.min(maxYear, selectedYear + 1))}>
+        <TouchableOpacity style={styles.yearUp} onPress={() => setSelectedYear(Math.min(maxYear, selectedYear + 1))}>
           <Text style={styles.arrow}>▶</Text>
         </TouchableOpacity>
       </View>
 
+      {/* ADD BUTTON */}
       <TouchableOpacity style={styles.addButton} onPress={handleAddMarker}>
         <Text style={styles.addText}>+</Text>
       </TouchableOpacity>
@@ -280,7 +282,6 @@ export default function MapScreen() {
       {selectedPlace && (
         <View style={styles.sheet}>
           <ScrollView showsVerticalScrollIndicator={false}>
-            {/* EDITABLE TITLE */}
             <View style={styles.header}>
               {isEditingTitle ? (
                 <View style={styles.editContainer}>
@@ -300,10 +301,7 @@ export default function MapScreen() {
                 </View>
               ) : (
                 <>
-                  <TouchableOpacity 
-                    style={styles.titleContainer}
-                    onPress={() => setIsEditingTitle(true)}
-                  >
+                  <TouchableOpacity style={styles.titleContainer} onPress={() => setIsEditingTitle(true)}>
                     <Text style={styles.title}>{selectedPlace.title}</Text>
                     <Text style={styles.editIcon}>✏️</Text>
                   </TouchableOpacity>
@@ -314,48 +312,50 @@ export default function MapScreen() {
               )}
             </View>
 
-            <Text style={styles.yearText}>Year: {selectedPlace.year || '?'}</Text>
+            {/* YEAR BADGE */}
+            <Text style={styles.yearBadge}>📅 {selectedPlace.year || '?'}</Text>
+            
+            {/* CREATED DATE BADGE */}
+            <Text style={styles.dateBadge}>🕒 Created: {formatDate(selectedPlace.createdAt)}</Text>
 
-            {/* DEBUG - Remove after fixing */}
-            <Text style={{ fontSize: 10, color: 'red', marginBottom: 5 }}>
-              Owner ID: {selectedPlace?.ownerId?.substring(0, 10)} | 
-              Current: {auth.currentUser?.uid?.substring(0, 10)} | 
-              IsOwner: {isOwner ? 'YES' : 'NO'}
-            </Text>
+            {/* OWNER INFO */}
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>👤 Owner:</Text>
+              <Text style={styles.infoValue}>{selectedPlace.ownerName || selectedPlace.ownerEmail?.split('@')[0] || 'Unknown'}</Text>
+            </View>
 
-            {/* Add Photo Button - Available to both owner and friends */}
+            {/* SHARED BY (if not owner) */}
+            {!isOwner && (
+              <View style={styles.infoRow}>
+                <Text style={styles.infoLabel}>🔗 Shared by:</Text>
+                <Text style={styles.infoValue}>{selectedPlace.ownerName || selectedPlace.ownerEmail?.split('@')[0] || 'Friend'}</Text>
+              </View>
+            )}
+
+            {/* ADD PHOTO BUTTON */}
             <TouchableOpacity style={styles.btnDark} onPress={handleAddPhoto}>
-              <Text style={styles.btnText}>Add Photo/Video</Text>
+              <Text style={styles.btnText}>📸 Add Photo/Video</Text>
             </TouchableOpacity>
 
-            {/* Add Friend Section - ONLY OWNER can add friends */}
-            {isOwner && (
-              <>
-                <Text style={styles.sectionLabel}>👥 Add Friend to Memory</Text>
-                {friendsList.length === 0 ? (
-                  <Text style={styles.noFriendsText}>No friends yet. Add friends from Friends tab.</Text>
-                ) : (
-                  <FlatList
-                    horizontal
-                    data={friendsList}
-                    keyExtractor={(item) => item.id}
-                    renderItem={({ item }) => (
-                      <TouchableOpacity 
-                        style={styles.friendChip} 
-                        onPress={() => handleAddFriendToMarker(
-                          item.id, 
-                          item.email, 
-                          item.displayName || item.email?.split('@')[0]
-                        )}
-                      >
-                        <Text style={styles.friendChipText}>+ {item.displayName || item.email?.split('@')[0]}</Text>
-                      </TouchableOpacity>
-                    )}
-                    showsHorizontalScrollIndicator={false}
-                    ListFooterComponent={<View style={{ width: 10 }} />}
-                  />
+            {/* ADD FRIEND SECTION */}
+            <Text style={styles.sectionLabel}>👥 Add Friend to Memory</Text>
+            {friendsList.length === 0 ? (
+              <Text style={styles.noFriendsText}>No friends yet. Add friends from Friends tab.</Text>
+            ) : (
+              <FlatList
+                horizontal
+                data={friendsList}
+                keyExtractor={(item) => item.id}
+                renderItem={({ item }) => (
+                  <TouchableOpacity 
+                    style={styles.friendChip} 
+                    onPress={() => handleAddFriendToMarker(item.id, item.email, item.displayName || item.email?.split('@')[0])}
+                  >
+                    <Text style={styles.friendChipText}>+ {item.displayName || item.email?.split('@')[0]}</Text>
+                  </TouchableOpacity>
                 )}
-              </>
+                showsHorizontalScrollIndicator={false}
+              />
             )}
 
             {/* MEMORIES SECTION */}
@@ -382,7 +382,7 @@ export default function MapScreen() {
                             <Text style={styles.videoBadgeText}>🎬</Text>
                           </View>
                         )}
-                        {!isMine && (
+                        {!isMine && !isOwner && (
                           <View style={styles.lockBadge}>
                             <Text style={styles.lockBadgeText}>🔒</Text>
                           </View>
@@ -395,10 +395,10 @@ export default function MapScreen() {
               />
             )}
 
-            {/* Delete Marker - ONLY OWNER can delete entire marker */}
+            {/* DELETE MARKER BUTTON - ONLY OWNER */}
             {isOwner && (
               <TouchableOpacity onPress={handleDeleteMarker}>
-                <Text style={styles.delete}>Delete Marker</Text>
+                <Text style={styles.delete}>🗑️ Delete Marker</Text>
               </TouchableOpacity>
             )}
           </ScrollView>
@@ -468,120 +468,134 @@ export default function MapScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   map: { flex: 1 },
+
+  // TIME CAPSULE
   timeCapsule: { 
     position: 'absolute', 
-    top: 10, 
-    right: 10, 
-    backgroundColor: '#000', 
+    top: 20, 
+    left: 16, 
+    backgroundColor: 'rgba(0,0,0,0.85)', 
     borderRadius: 30, 
     flexDirection: 'row', 
+    alignItems: 'center',
     paddingHorizontal: 8, 
-    paddingVertical: 6, 
-    zIndex: 10 
+    paddingVertical: 5, 
+    zIndex: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
   },
-  arrow: { color: '#fff', fontSize: 12, fontWeight: 'bold', paddingHorizontal: 8 },
-  year: { color: '#fff', fontSize: 16, fontWeight: 'bold', paddingHorizontal: 8, minWidth: 50, textAlign: 'center' },
+  yearDown: { paddingHorizontal: 4, paddingVertical: 4 },
+  yearUp: { paddingHorizontal: 4, paddingVertical: 4 },
+  arrow: { color: '#fff', fontSize: 12, fontWeight: 'bold', paddingHorizontal: 2 },
+  year: { color: '#fff', fontSize: 12, fontWeight: 'bold', paddingHorizontal: 8, minWidth: 45, textAlign: 'center' },
+
+  // ADD BUTTON
   addButton: { 
     position: 'absolute', 
     bottom: 28, 
     alignSelf: 'center', 
-    width: 62, 
-    height: 62, 
-    borderRadius: 31, 
-    backgroundColor: '#000', 
+    width: 64, 
+    height: 64, 
+    borderRadius: 32, 
+    backgroundColor: '#6B3F1D', 
     justifyContent: 'center', 
-    alignItems: 'center' 
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 8,
   },
-  addText: { color: '#fff', fontSize: 28 },
-  markerContainer: { width: 48, height: 56, alignItems: 'center', justifyContent: 'center' },
+  addText: { color: '#fff', fontSize: 32, fontWeight: 'bold' },
+
+  // MARKER
+  markerContainer: { width: 56, height: 64, alignItems: 'center', justifyContent: 'center' },
   thumbWrapper: { 
-    width: 60, 
-    height: 40, 
-    borderRadius: 6, 
-    overflow: 'hidden', 
-    backgroundColor: '#fff', 
-    borderWidth: 1, 
-    borderColor: '#ddd', 
-    marginBottom: 2 
+    width: 56, height: 44, borderRadius: 10, overflow: 'hidden', backgroundColor: '#fff', 
+    borderWidth: 2, borderColor: '#fff', marginBottom: 4,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 4, elevation: 4,
   },
   thumb: { width: '100%', height: '100%', resizeMode: 'cover' },
-  pin: { width: 9, height: 9, borderRadius: 5, backgroundColor: '#ff0000', borderWidth: 2, borderColor: '#fff' },
-  pinActive: { borderColor: '#000', transform: [{ scale: 1.15 }] },
+  pin: { width: 12, height: 12, borderRadius: 6, backgroundColor: '#ff4444', borderWidth: 2, borderColor: '#fff',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.2, shadowRadius: 2,
+  },
+  pinActive: { borderColor: '#6B3F1D', transform: [{ scale: 1.3 }], backgroundColor: '#ff6666' },
+
+  // BOTTOM SHEET
   sheet: { 
-    position: 'absolute', 
-    bottom: 0, 
-    left: 0, 
-    right: 0, 
-    maxHeight: '85%', 
-    backgroundColor: '#fff', 
-    borderTopLeftRadius: 20, 
-    borderTopRightRadius: 20, 
-    paddingHorizontal: 14, 
-    paddingTop: 10, 
-    paddingBottom: 10 
+    position: 'absolute', bottom: 0, left: 0, right: 0, maxHeight: '80%', backgroundColor: '#fff',
+    borderTopLeftRadius: 24, borderTopRightRadius: 24, paddingHorizontal: 20, paddingTop: 16, paddingBottom: 24,
+    shadowColor: '#000', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.15, shadowRadius: 12, elevation: 10,
   },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, flexWrap: 'wrap' },
-  titleContainer: { flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 },
-  title: { fontSize: 16, fontWeight: 'bold', flex: 1 },
-  editIcon: { fontSize: 14, color: '#666' },
-  editContainer: { flexDirection: 'row', alignItems: 'center', flex: 1, gap: 8 },
-  titleInput: { 
-    backgroundColor: '#f2f2f2', 
-    paddingHorizontal: 10, 
-    paddingVertical: 6, 
-    borderRadius: 8, 
-    fontSize: 14, 
-    flex: 1 
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' },
+  titleContainer: { 
+    flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1,
+    backgroundColor: '#f8f8f8', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12,
   },
-  saveBtn: { backgroundColor: '#4CAF50', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
-  saveBtnText: { color: '#fff', fontSize: 12, fontWeight: 'bold' },
-  cancelEditBtn: { paddingHorizontal: 8, paddingVertical: 6 },
-  cancelEditText: { fontSize: 16, color: '#999' },
-  close: { fontSize: 20, padding: 4 },
-  yearText: { fontSize: 12, color: '#666', marginBottom: 6 },
-  btnDark: { backgroundColor: '#444', paddingVertical: 9, borderRadius: 10, marginTop: 6 },
-  btnText: { color: '#fff', textAlign: 'center', fontSize: 13, fontWeight: '500' },
-  sectionLabel: { fontSize: 14, fontWeight: '600', color: '#333', marginTop: 12, marginBottom: 8 },
-  friendChip: { backgroundColor: '#6B3F1D', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, marginRight: 8 },
-  friendChipText: { color: '#fff', fontSize: 12, fontWeight: '500' },
-  noFriendsText: { color: '#999', fontSize: 12, fontStyle: 'italic', marginBottom: 8 },
-  noPhotosText: { color: '#999', fontSize: 12, fontStyle: 'italic', marginBottom: 8, textAlign: 'center' },
-  photo: { width: 90, height: 90, borderRadius: 12, backgroundColor: '#eee', marginRight: 8 },
-  delete: { marginTop: 8, textAlign: 'center', color: 'red', fontSize: 13, marginBottom: 20 },
-  videoBadge: { 
-    position: 'absolute', 
-    bottom: 4, 
-    right: 4, 
-    backgroundColor: 'rgba(0,0,0,0.6)', 
-    borderRadius: 12, 
-    paddingHorizontal: 6, 
-    paddingVertical: 2 
+  title: { fontSize: 18, fontWeight: '700', flex: 1, color: '#1a1a1a' },
+  editIcon: { fontSize: 14, color: '#6B3F1D', padding: 4 },
+  editContainer: { flexDirection: 'row', alignItems: 'center', flex: 1, gap: 8, backgroundColor: '#f8f8f8', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 },
+  titleInput: { backgroundColor: '#fff', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, fontSize: 16, flex: 1, borderWidth: 1, borderColor: '#ddd' },
+  saveBtn: { backgroundColor: '#4CAF50', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 10 },
+  saveBtnText: { color: '#fff', fontSize: 14, fontWeight: '600' },
+  cancelEditBtn: { paddingHorizontal: 12, paddingVertical: 8 },
+  cancelEditText: { fontSize: 18, color: '#999' },
+  close: { fontSize: 24, padding: 8, color: '#666' },
+  
+  // BADGES
+  yearBadge: { 
+    fontSize: 12, color: '#888', marginBottom: 8, backgroundColor: '#f0f0f0', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, alignSelf: 'flex-start', fontWeight: '500',
   },
+  dateBadge: { 
+    fontSize: 11, color: '#999', marginBottom: 12, backgroundColor: '#f8f8f8', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20, alignSelf: 'flex-start',
+  },
+  
+  // INFO ROWS
+  infoRow: {
+    flexDirection: 'row', alignItems: 'center', marginBottom: 6, backgroundColor: '#f8f8f8', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8,
+  },
+  infoLabel: { fontSize: 11, fontWeight: '600', color: '#666', width: 65 },
+  infoValue: { fontSize: 11, color: '#333', flex: 1 },
+  
+  // BUTTONS
+  btnDark: { 
+    backgroundColor: '#6B3F1D', paddingVertical: 14, borderRadius: 14, marginTop: 12,
+    shadowColor: '#6B3F1D', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 4, elevation: 3,
+  },
+  btnText: { color: '#fff', textAlign: 'center', fontSize: 16, fontWeight: '600' },
+  sectionLabel: { fontSize: 16, fontWeight: '600', color: '#333', marginTop: 20, marginBottom: 12 },
+  
+  // FRIEND CHIPS
+  friendChip: { 
+    backgroundColor: '#6B3F1D', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 30, marginRight: 10,
+    shadowColor: '#6B3F1D', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.2, shadowRadius: 2, elevation: 2,
+  },
+  friendChipText: { color: '#fff', fontSize: 14, fontWeight: '500' },
+  noFriendsText: { color: '#999', fontSize: 14, fontStyle: 'italic', marginBottom: 8, textAlign: 'center', paddingVertical: 20 },
+  noPhotosText: { color: '#999', fontSize: 14, fontStyle: 'italic', marginBottom: 8, textAlign: 'center', paddingVertical: 30 },
+  
+  // PHOTOS
+  photo: { width: 100, height: 100, borderRadius: 16, backgroundColor: '#f0f0f0', marginRight: 10, borderWidth: 1, borderColor: '#eee' },
+  
+  // DELETE BUTTON
+  delete: { marginTop: 20, textAlign: 'center', color: '#ff4444', fontSize: 15, fontWeight: '600', marginBottom: 10, paddingVertical: 12, backgroundColor: '#fff5f5', borderRadius: 12 },
+  
+  // BADGES
+  videoBadge: { position: 'absolute', bottom: 6, right: 6, backgroundColor: 'rgba(0,0,0,0.7)', borderRadius: 20, paddingHorizontal: 8, paddingVertical: 3 },
   videoBadgeText: { color: '#fff', fontSize: 12 },
-  lockBadge: { 
-    position: 'absolute', 
-    top: 4, 
-    right: 4, 
-    backgroundColor: 'rgba(0,0,0,0.6)', 
-    borderRadius: 12, 
-    paddingHorizontal: 6, 
-    paddingVertical: 2 
-  },
+  lockBadge: { position: 'absolute', top: 6, right: 6, backgroundColor: 'rgba(0,0,0,0.7)', borderRadius: 20, paddingHorizontal: 6, paddingVertical: 3 },
   lockBadgeText: { color: '#fff', fontSize: 10 },
+  
+  // VIEWER
   viewerContainer: { flex: 1, backgroundColor: '#000' },
-  viewerClose: { position: 'absolute', top: 50, right: 25, zIndex: 999, padding: 10 },
-  viewerCloseText: { color: '#fff', fontSize: 28, fontWeight: 'bold' },
+  viewerClose: { position: 'absolute', top: 50, right: 20, zIndex: 999, padding: 12, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 30 },
+  viewerCloseText: { color: '#fff', fontSize: 24, fontWeight: 'bold' },
   fullImage: { width: SCREEN_WIDTH, height: SCREEN_HEIGHT, resizeMode: 'contain' },
-  videoContainer: { 
-    width: SCREEN_WIDTH, 
-    height: SCREEN_HEIGHT, 
-    backgroundColor: '#000',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  fullVideo: { 
-    width: SCREEN_WIDTH, 
-    height: SCREEN_HEIGHT, 
-    backgroundColor: '#000',
-  },
+  videoContainer: { width: SCREEN_WIDTH, height: SCREEN_HEIGHT, backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' },
+  fullVideo: { width: SCREEN_WIDTH, height: SCREEN_HEIGHT, backgroundColor: '#000' },
 });

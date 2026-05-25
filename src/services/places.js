@@ -30,6 +30,8 @@ export const addPlace = async (lat, lng, year) => {
     sharedWith: [],
     createdAt: new Date().toISOString(),
     ownerId: user.uid,
+    ownerName: user.email?.split('@')[0] || 'User',
+    ownerEmail: user.email,
   });
   console.log('✅ Marker created');
 };
@@ -41,7 +43,9 @@ export const getMyPlaces = async () => {
   return snap.docs.map(d => ({ 
     id: d.id, 
     ...d.data(), 
-    ownerId: user.uid 
+    ownerId: user.uid,
+    ownerName: user.email?.split('@')[0] || 'User',
+    ownerEmail: user.email,
   }));
 };
 
@@ -54,6 +58,11 @@ export const getSharedPlaces = async () => {
   let sharedPlaces = [];
   
   for (const userDoc of usersSnapshot.docs) {
+    const ownerProfile = await getDoc(doc(db, 'profiles', userDoc.id));
+    const ownerName = ownerProfile.exists() 
+      ? (ownerProfile.data().displayName || ownerProfile.data().email?.split('@')[0] || 'User')
+      : userDoc.id.substring(0, 8);
+    
     const placesSnapshot = await getDocs(collection(db, 'users', userDoc.id, 'places'));
     
     placesSnapshot.forEach(placeDoc => {
@@ -63,11 +72,14 @@ export const getSharedPlaces = async () => {
           id: placeDoc.id,
           ...place,
           ownerId: userDoc.id,
+          ownerName: place.ownerName || ownerName,
+          ownerEmail: place.ownerEmail,
           isShared: true,
         });
       }
     });
   }
+  console.log('📊 Shared places found:', sharedPlaces.length);
   return sharedPlaces;
 };
 
@@ -81,25 +93,26 @@ export const getAllPlaces = async () => {
   return [...myPlaces, ...sharedPlaces];
 };
 
-// ADD FRIEND TO MARKER
+// ADD FRIEND TO MARKER - Anyone with access can add friends
 export const addFriendToMarker = async (placeId, friendId, friendEmail, friendName) => {
   const user = auth.currentUser;
   const placeRef = doc(db, 'users', user.uid, 'places', placeId);
   
-  // Make sure all values are defined
   const friendData = {
     userId: friendId,
     email: friendEmail || '',
     name: friendName || friendEmail?.split('@')[0] || 'Friend',
     addedAt: new Date().toISOString(),
+    addedBy: user.uid,
+    addedByEmail: user.email,
   };
   
-  console.log('Adding friend data:', friendData);
+  console.log('Adding friend to marker:', friendData);
   
   await updateDoc(placeRef, {
     sharedWith: arrayUnion(friendData)
   });
-  console.log('✅ Friend added to marker:', friendName);
+  console.log('✅ Friend added to marker by:', user.email);
 };
 
 // RENAME PLACE (only owner)
@@ -113,7 +126,7 @@ export const renamePlace = async (id, title) => {
 export const deletePlace = async (id) => {
   const user = auth.currentUser;
   await deleteDoc(doc(db, 'users', user.uid, 'places', id));
-  console.log('✅ Marker deleted');
+  console.log('✅ Marker deleted by owner:', user.email);
 };
 
 // ADD PHOTO/VIDEO (tracks who uploaded)
@@ -130,18 +143,21 @@ export const addPhotoToPlace = async (ownerId, placeId, photo) => {
       mediaType: photo.mediaType,
       uploadedBy: user.uid,
       uploadedByEmail: user.email,
-      uploadedByName: user.email?.split('@')[0],
+      uploadedByName: user.email?.split('@')[0] || 'User',
     }),
   });
   console.log('✅ Photo/Video added by:', user.email);
 };
 
-// DELETE PHOTO/VIDEO (only if you uploaded it)
+// DELETE PHOTO/VIDEO - Owner can delete any, others only their own
 export const deletePhotoFromPlace = async (ownerId, placeId, photoToDelete) => {
   const currentUser = auth.currentUser;
+  const isOwner = ownerId === currentUser.uid;
   
-  if (photoToDelete.uploadedBy !== currentUser.uid) {
-    throw new Error('You can only delete your own photos/videos');
+  // Owner can delete ANY photo in their marker
+  // Others can only delete their own photos
+  if (!isOwner && photoToDelete.uploadedBy !== currentUser.uid) {
+    throw new Error('Only the marker owner or the person who uploaded this can delete it.');
   }
   
   const placeRef = doc(db, 'users', ownerId, 'places', placeId);
@@ -154,7 +170,7 @@ export const deletePhotoFromPlace = async (ownerId, placeId, photoToDelete) => {
         photo.createdAt === photoToDelete.createdAt)
     );
     await updateDoc(placeRef, { photos: updatedPhotos });
-    console.log('✅ Photo/Video deleted by:', currentUser.email);
+    console.log('✅ Photo/Video deleted by:', currentUser.email, 'IsOwner:', isOwner);
     return true;
   }
   throw new Error('Place not found');

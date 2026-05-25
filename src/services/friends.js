@@ -24,7 +24,6 @@ export const createUserProfile = async (user) => {
       email: user.email,
       displayName: user.displayName || user.email.split('@')[0],
       friends: [],
-      friendRequests: [],
       createdAt: new Date().toISOString(),
     });
     console.log('✅ Profile created for:', user.email);
@@ -96,7 +95,7 @@ export const acceptFriendRequest = async (requestId, fromUserId) => {
     friends: arrayUnion(fromUserId)
   });
   
-  // Add to sender's friends (CRITICAL - both ways)
+  // Add to sender's friends
   await updateDoc(doc(db, 'profiles', fromUserId), {
     friends: arrayUnion(currentUserId)
   });
@@ -121,7 +120,9 @@ export const getPendingRequests = async () => {
     where('status', '==', 'pending')
   );
   const snapshot = await getDocs(q);
-  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  const requests = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  console.log('📋 Pending requests:', requests.length);
+  return requests;
 };
 
 // GET SENT REQUESTS (outgoing)
@@ -166,4 +167,11 @@ export const removeFriend = async (friendId) => {
   });
   
   console.log('✅ Friend removed');
+};
+
+// CHECK IF USERS ARE FRIENDS
+export const checkIfFriends = async (userId, otherUserId) => {
+  const userDoc = await getDoc(doc(db, 'profiles', userId));
+  const friends = userDoc.data()?.friends || [];
+  return friends.includes(otherUserId);
 };

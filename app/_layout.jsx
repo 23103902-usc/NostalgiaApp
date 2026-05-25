@@ -10,8 +10,10 @@ export default function Layout() {
         headerTintColor: '#fff',
         headerTitleStyle: {
           fontWeight: 'bold',
+          fontSize: 18,
         },
         headerBackTitle: 'Back',
+        headerShadowVisible: false,
       }}
     >
       <Stack.Screen 
@@ -31,6 +33,7 @@ export default function Layout() {
         options={{ 
           title: 'Nostalgia',
           headerBackVisible: false,
+          headerTitleStyle: { fontSize: 22, fontWeight: 'bold' },
         }} 
       />
       <Stack.Screen 
