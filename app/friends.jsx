@@ -8,7 +8,7 @@ import {
   Alert,
   TextInput,
   Modal,
-  SectionList,
+  RefreshControl,
 } from 'react-native';
 import { auth } from '../src/config/firebase';
 import {
@@ -27,6 +27,7 @@ export default function FriendsScreen() {
   const [sentRequests, setSentRequests] = useState([]);
   const [modalVisible, setModalVisible] = useState(false);
   const [friendEmail, setFriendEmail] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
 
   const loadData = async () => {
     try {
@@ -46,6 +47,12 @@ export default function FriendsScreen() {
   useEffect(() => {
     loadData();
   }, []);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await loadData();
+    setRefreshing(false);
+  };
 
   const handleSendRequest = async () => {
     if (!friendEmail) {
@@ -178,6 +185,7 @@ export default function FriendsScreen() {
         <FlatList
           data={sections}
           keyExtractor={(item, index) => item.title + index}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
           renderItem={({ item }) => (
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>{item.title}</Text>

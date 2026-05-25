@@ -27,6 +27,7 @@ export const createUserProfile = async (user) => {
       friendRequests: [],
       createdAt: new Date().toISOString(),
     });
+    console.log('✅ Profile created for:', user.email);
   }
 };
 
@@ -77,6 +78,8 @@ export const sendFriendRequest = async (toEmail) => {
     status: 'pending',
     createdAt: new Date().toISOString(),
   });
+  
+  console.log('✅ Friend request sent to:', toEmail);
 };
 
 // ACCEPT FRIEND REQUEST
@@ -88,14 +91,17 @@ export const acceptFriendRequest = async (requestId, fromUserId) => {
     status: 'accepted',
   });
   
-  // Add to both users' friends arrays
+  // Add to current user's friends
   await updateDoc(doc(db, 'profiles', currentUserId), {
     friends: arrayUnion(fromUserId)
   });
   
+  // Add to sender's friends (CRITICAL - both ways)
   await updateDoc(doc(db, 'profiles', fromUserId), {
     friends: arrayUnion(currentUserId)
   });
+  
+  console.log('✅ Friend request accepted. Both users now friends.');
 };
 
 // DECLINE FRIEND REQUEST
@@ -103,6 +109,7 @@ export const declineFriendRequest = async (requestId) => {
   await updateDoc(doc(db, 'friendRequests', requestId), {
     status: 'declined',
   });
+  console.log('✅ Friend request declined');
 };
 
 // GET PENDING FRIEND REQUESTS (incoming)
@@ -142,6 +149,7 @@ export const getFriends = async () => {
       friends.push({ id: friendId, ...friendDoc.data() });
     }
   }
+  console.log('📋 Friends list loaded:', friends.length);
   return friends;
 };
 
@@ -156,4 +164,6 @@ export const removeFriend = async (friendId) => {
   await updateDoc(doc(db, 'profiles', friendId), {
     friends: arrayRemove(currentUserId)
   });
+  
+  console.log('✅ Friend removed');
 };
